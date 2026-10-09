@@ -53,9 +53,12 @@ const lots = (shares) => Math.round(shares / 1000).toLocaleString('en-US'); // �
 
 // ---------- 抓資料 ----------
 async function fetchDayPrices(http, iso) {
-  const j = await http(`https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?date=${ymd(iso)}&response=json`);
-  const t = tableOf(j, '收盤價');
-  if (!t || !t.data.length) return null;
+  // MI_INDEX 會照指定日期回傳（STOCK_DAY_ALL 不管日期都只回最新一天，不能用來回補）
+  const j = await http(`https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=${ymd(iso)}&type=ALLBUT0999&response=json`);
+  if (!j || typeof j !== 'object' || (j.date && j.date !== ymd(iso))) return null;
+  let t = null;
+  for (const x of j.tables || []) if (x && Array.isArray(x.fields) && col(x.fields, '收盤價') >= 0 && col(x.fields, '證券代號') >= 0) { t = x; break; }
+  if (!t || !t.data || !t.data.length) return null;
   const f = t.fields;
   const ic = col(f, '證券代號'), inm = col(f, '證券名稱'), iv = col(f, '成交股數'), ip = col(f, '收盤價');
   const io = col(f, '開盤價'), ih = col(f, '最高價'), il = col(f, '最低價');
@@ -149,23 +152,38 @@ async function fetchTpexLatestPrices(http) {
   return out;
 }
 
-// 歷史行情（回補用）：櫃買舊版查詢網址，欄位用中文名稱或固定位置判讀
+// 歷史行情（回補用）：櫃買新版網址，會照指定日期回傳
 async function fetchTpexDayPrices(http, iso) {
   const [y, m, d] = iso.split('-');
-  const roc = `${+y - 1911}/${m}/${d}`;
-  const j = await http(`https://www.tpex.org.tw/web/stock/aftertrading/daily_close_quotes/stk_quote_result.php?l=zh-tw&d=${roc}&o=json`);
-  let rows = null, ic = 0, inm = 1, ip = 2, iv = 8;
-  const t = tableOf(j, '收盤');
-  if (t) {
-    rows = t.data; const f = t.fields;
-    ic = col(f, '代號'); inm = col(f, '名稱'); ip = col(f, '收盤'); iv = col(f, '成交股數');
-  } else if (j && Array.isArray(j.aaData)) rows = j.aaData;
-  if (!rows || !rows.length) return null;
-  const out = { c: {}, v: {}, names: {} };
-  for (const row of rows) {
+  const j = await http(`https://www.tpex.org.tw/www/zh-tw/afterTrading/otc?date=${y}%2F${m}%2F${d}&type=EW&response=json`);
+  if (!j || typeof j !== 'object' || j.date !== ymd(iso)) return null;
+  const t = (j.tables || []).find((x) => x && Array.isArray(x.fields) && col(x.fields, '收盤') >= 0);
+  if (!t || !t.data || !t.data.length) return null;
+  const f = t.fields;
+  const ic = col(f, '代號'), inm = col(f, '名稱'), ip = col(f, '收盤'), iv = col(f, '成交股數');
+  const io = col(f, '開盤'), ih = col(f, '最高'), il = col(f, '最低');
+  const out = { c: {}, v: {}, names: {}, ohl: {} };
+  for (const row of t.data) {
     const code = String(row[ic]).trim(), p = num(row[ip]);
     if (p == null) continue;
     out.c[code] = p; out.v[code] = num(row[iv]) || 0; out.names[code] = String(row[inm]).trim();
+    out.ohl[code] = [io >= 0 ? num(row[io]) : null, ih >= 0 ? num(row[ih]) : null, il >= 0 ? num(row[il]) : null];
+  }
+  return out;
+}
+
+// 上櫃三大法人（指定日期）：欄位名稱重複，依位置讀取
+// 0 代號｜4 外資(不含外資自營商)買賣超｜10 外資合計買賣超｜13 投信買賣超｜23 三大法人合計
+async function fetchTpexChipsHist(http, iso) {
+  const [y, m, d] = iso.split('-');
+  const j = await http(`https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=EW&date=${y}%2F${m}%2F${d}&response=json`);
+  if (!j || typeof j !== 'object' || j.date !== ymd(iso)) return null;
+  const t = (j.tables || []).find((x) => x && Array.isArray(x.data) && x.data.length && x.data[0].length >= 24);
+  if (!t) return null;
+  const out = { t: {}, f: {}, a: {} };
+  for (const row of t.data) {
+    const code = String(row[0]).trim();
+    out.f[code] = num(row[10]) || 0; out.t[code] = num(row[13]) || 0; out.a[code] = num(row[23]) || 0;
   }
   return out;
 }
@@ -483,7 +501,11 @@ async function runUpdate(store, http, sleep, log, todayISO, progress) {
         await sleep(CFG.DELAY_MS);
         if (o) { markOTC(store, Object.keys(o.c)); mergeInto(p, o); otcDays++; }
         let chips = null;
-        if (got < 6) { chips = await fetchChips(http, iso).catch(() => null); await sleep(CFG.DELAY_MS); }
+        if (got < 6) {
+          chips = await fetchChips(http, iso).catch(() => null); await sleep(CFG.DELAY_MS);
+          const oc = await fetchTpexChipsHist(http, iso).catch(() => null); await sleep(CFG.DELAY_MS);
+          if (oc) chips = mergeInto(chips || { t: {}, f: {}, a: {} }, oc);
+        }
         addDay(store, iso, p, chips);
         if (!store.lastOhl || store.lastOhl.d < iso) store.lastOhl = { d: iso, ohl: p.ohl };
         got++;
@@ -511,8 +533,10 @@ async function runUpdate(store, http, sleep, log, todayISO, progress) {
         const o = (await safe(fetchTpexDayPrices(http, iso), () => {}, '')).value;
         await sleep(CFG.DELAY_MS);
         if (o) { markOTC(store, Object.keys(o.c)); mergeInto(p, o); }
-        const chips = await fetchChips(http, iso).catch(() => null);
+        let chips = await fetchChips(http, iso).catch(() => null);
         await sleep(CFG.DELAY_MS);
+        const oc = await fetchTpexChipsHist(http, iso).catch(() => null);
+        if (oc) chips = mergeInto(chips || { t: {}, f: {}, a: {} }, oc);
         addDay(store, iso, p, chips);
         if (!store.lastOhl || store.lastOhl.d < iso) store.lastOhl = { d: iso, ohl: p.ohl };
         filled++;
@@ -545,10 +569,12 @@ async function runUpdate(store, http, sleep, log, todayISO, progress) {
     src.twseChips = !!chips;
   } else src.twseChips = !!store.days[store.days.length - 1].t;
 
-  const op = await safe(fetchTpexLatestPrices(http), log, '上櫃行情');
+  let op = { value: await fetchTpexDayPrices(http, dayISO).catch(() => null) };
+  if (op.value) op.value.d = dayISO; else op = await safe(fetchTpexLatestPrices(http), log, '上櫃行情');
   src.tpexPrice = !!(op.value && op.value.d === dayISO);
   if (src.tpexPrice) { markOTC(store, Object.keys(op.value.c)); mergeInto(prices, op.value); }
-  const oc = await safe(fetchTpexChips(http), log, '上櫃法人');
+  let oc = { value: await fetchTpexChipsHist(http, dayISO).catch(() => null) };
+  if (oc.value) oc.value.d = dayISO; else oc = await safe(fetchTpexChips(http), log, '上櫃法人');
   src.tpexChips = !!(oc.value && oc.value.d === dayISO);
   if (fresh) {
     if (src.tpexChips) chips = mergeInto(chips || { t: {}, f: {}, a: {} }, oc.value);
