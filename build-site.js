@@ -55,9 +55,10 @@ function summary(store, out) {
 
 (async () => {
   const store = load();
+  let saves = 0; // 每 10 個進度存一次，執行被中斷也不會全部重來
   let out = { report: [] };
   try {
-    out = await E.runUpdate(store, getJSON, sleep, (m) => console.log(m), todayTPE(), (m) => console.log('…' + m));
+    out = await E.runUpdate(store, getJSON, sleep, (m) => console.log(m), todayTPE(), (m) => { console.log('…' + m); if (++saves % 10 === 0) save(store); });
   } catch (e) {
     out.report.push('執行失敗：' + e.message);
     console.error(e);
