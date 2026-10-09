@@ -1,0 +1,51 @@
+name: 測試欄位
+
+on:
+  push:
+    paths: ['.github/workflows/probe3.yml']
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 列出欄位
+        run: |
+          cat > p.js <<'EOF'
+          const H = { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } };
+          const get = async (u) => { const r = await fetch(u, H); const t = await r.text(); try { return JSON.parse(t); } catch (e) { return 'TEXT:' + t.slice(0, 200); } };
+          const out = (k, v) => console.log('RESULT', k, JSON.stringify(v).slice(0, 1500));
+          (async () => {
+            for (const [k, u] of Object.entries({
+              tpex_insti: 'https://www.tpex.org.tw/openapi/v1/tpex_3insti_daily_trading',
+              tpex_close: 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes',
+              tpex_pe: 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis',
+            })) {
+              const j = await get(u);
+              if (!Array.isArray(j)) { out(k, j); continue; }
+              out(k + '_keys', Object.keys(j[0]));
+              out(k + '_6488', j.find((x) => Object.values(x).includes('6488')) || j[3]);
+            }
+            const mi = await get('https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20260915&type=ALLBUT0999&response=json');
+            const t = (mi.tables || []).find((x) => (x.fields || []).some((f) => String(f).includes('收盤價')));
+            out('mi_fields', t && t.fields);
+            out('mi_2330', t && t.data.find((r) => r[0] === '2330'));
+            const ya = await get('https://query1.finance.yahoo.com/v8/finance/chart/6488.TWO?range=9mo&interval=1d');
+            const res = ya.chart && ya.chart.result && ya.chart.result[0];
+            if (res) out('yahoo', { n: res.timestamp.length, first: new Date(res.timestamp[0] * 1000).toISOString(), last: new Date(res.timestamp[res.timestamp.length - 1] * 1000).toISOString(), gmtoffset: res.meta.gmtoffset, c: res.indicators.quote[0].close.slice(-3), v: res.indicators.quote[0].volume.slice(-3) });
+            else out('yahoo', ya);
+            for (const [k, u] of Object.entries({
+              tpex_otc_0915: 'https://www.tpex.org.tw/www/zh-tw/afterTrading/otc?date=2026%2F09%2F15&type=EW&response=json',
+              tpex_dailyq_0915: 'https://www.tpex.org.tw/www/zh-tw/afterTrading/dailyQ?date=2026%2F09%2F15&response=json',
+              tpex_insti_0915: 'https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=EW&date=2026%2F09%2F15&response=json',
+            })) {
+              const j = await get(u);
+              if (typeof j === 'string') { out(k, j); continue; }
+              out(k, { keys: Object.keys(j), date: j.date, stat: j.stat, tables: (j.tables || []).map((x) => ({ title: x.title, fields: x.fields, n: (x.data || []).length, row0: (x.data || [])[0] })) });
+            }
+          })();
+          EOF
+          node p.js
