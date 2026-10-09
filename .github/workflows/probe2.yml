@@ -1,0 +1,40 @@
+name: 測試歷史資料
+
+on:
+  push:
+    paths: ['.github/workflows/probe2.yml']
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 測試過去日期
+        run: |
+          cat > p.js <<'EOF'
+          const urls = {
+            day_json_0915: 'https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?date=20260915&response=json',
+            day_csv_0915: 'https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?date=20260915&response=csv',
+            mi_index_0915: 'https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20260915&type=ALLBUT0999&response=json',
+            t86_0915: 'https://www.twse.com.tw/rwd/zh/fund/T86?date=20260915&selectType=ALLBUT0999&response=json',
+            tpex_hist_0915: 'https://www.tpex.org.tw/web/stock/aftertrading/daily_close_quotes/stk_quote_result.php?l=zh-tw&d=115/09/15&o=json',
+          };
+          (async () => {
+            for (const [k, u] of Object.entries(urls)) {
+              for (const ua of ['Mozilla/5.0', '168AI stock picker']) {
+                try {
+                  const r = await fetch(u, { headers: { 'User-Agent': ua, 'Accept': 'application/json' } });
+                  const t = await r.text();
+                  let info = '';
+                  try { const j = JSON.parse(t); info = 'JSON keys=' + Object.keys(j).join('|') + ' date=' + j.date + ' stat=' + j.stat + (j.tables ? ' tables=' + j.tables.map(x => (x.title||'') + ':' + ((x.fields||[]).length) + 'f/' + ((x.data||[]).length) + 'r').join(';') : '') + (j.fields ? ' fields=' + j.fields.join('|') + ' rows=' + (j.data||[]).length : ''); }
+                  catch (e) { info = 'TEXT ' + t.slice(0, 200); }
+                  console.log('RESULT', k, '[' + ua + ']', r.status, t.length, info.slice(0, 700));
+                } catch (e) { console.log('RESULT', k, 'ERR', e.message); }
+              }
+            }
+          })();
+          EOF
+          node p.js
