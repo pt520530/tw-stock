@@ -10,6 +10,7 @@ const ROOT = __dirname;
 const STORE_FILE = path.join(ROOT, 'store', 'store.json');
 const SITE_DIR = path.join(ROOT, 'site');
 const UA = 'Mozilla/5.0 (168AI stock picker)';
+const QUOTE_URL = 'https://tw-stock-quote.pt520530.workers.dev/'; // 盤中即時報價（Cloudflare Worker）
 
 function load() { try { return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8')); } catch (e) { return {}; } }
 function save(store) { fs.mkdirSync(path.dirname(STORE_FILE), { recursive: true }); fs.writeFileSync(STORE_FILE, JSON.stringify(store)); }
@@ -30,7 +31,7 @@ function render(store) {
   const page = fs.readFileSync(path.join(ROOT, 'page.html'), 'utf8');
   const data = store.latest ? Object.assign({}, store.latest, { track: store.track, generatedAt: store.updatedAt }) : null;
   const js = (x) => JSON.stringify(x).replace(/</g, '\\u003c');
-  const body = page.replace('/*__DATA__*/null', js(data)).replace('/*__QURL__*/null', 'null')
+  const body = page.replace('/*__DATA__*/null', js(data)).replace('/*__QURL__*/null', js(QUOTE_URL))
     .replace('/*__STATUS__*/null', js(data ? null : '雲端還在準備第一次的資料，請等 GitHub 的排程跑完再回來看。'));
   return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="168選股"><meta name="mobile-web-app-capable" content="yes">

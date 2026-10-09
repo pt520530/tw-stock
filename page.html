@@ -371,7 +371,7 @@ window.__STATUS__ = /*__STATUS__*/null;
   });
   $('hits').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) showReport(b.dataset.c); });
 
-  // ---- 盤中即時報價（只有在 n8n 提供網頁時才會連線）----
+  // ---- 盤中即時報價（雲端版經 Cloudflare 轉接，本機版由本機程式提供）----
   const QURL = window.__QURL__ || (/\/webhook(-test)?\//.test(location.pathname) ? location.pathname.replace(/\/tw-stock\/?$/, '/tw-stock-quote') : null);
   const LIVE = !!QURL;
   function tpeNow(){ const t = new Date(Date.now() + 8 * 3600e3); return { dow: t.getUTCDay(), min: t.getUTCHours() * 60 + t.getUTCMinutes() }; }
@@ -385,7 +385,8 @@ window.__STATUS__ = /*__STATUS__*/null;
     if (!want.size) return;
     busy = true;
     try {
-      const r = await fetch(QURL + '?codes=' + [...want].join(','), { cache: 'no-store' });
+      const otc = [...want].filter((c) => S[c] && S[c].m === '櫃');
+      const r = await fetch(QURL + '?codes=' + [...want].join(',') + (otc.length ? '&otc=' + otc.join(',') : ''), { cache: 'no-store' });
       const j = await r.json();
       const got = Object.keys(j.quotes || {}).length;
       Object.assign(LQ, j.quotes || {});
