@@ -1,0 +1,43 @@
+name: 測試資料來源
+
+on:
+  push:
+    paths: ['.github/workflows/probe.yml']
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 測試每個資料來源
+        run: |
+          cat > p.js <<'EOF'
+          const urls = {
+            twse_rwd_day: 'https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?date=20261008&response=json',
+            twse_rwd_t86: 'https://www.twse.com.tw/rwd/zh/fund/T86?date=20261008&selectType=ALLBUT0999&response=json',
+            twse_openapi_day: 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL',
+            twse_openapi_pe: 'https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL',
+            tpex_openapi_close: 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes',
+            tpex_openapi_insti: 'https://www.tpex.org.tw/openapi/v1/tpex_3insti_daily_trading',
+            tpex_hist: 'https://www.tpex.org.tw/web/stock/aftertrading/daily_close_quotes/stk_quote_result.php?l=zh-tw&d=115/10/08&o=json',
+            yahoo_2330: 'https://query1.finance.yahoo.com/v8/finance/chart/2330.TW?range=6mo&interval=1d',
+            yahoo_6488: 'https://query1.finance.yahoo.com/v8/finance/chart/6488.TWO?range=6mo&interval=1d',
+            finmind_chips_all: 'https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInstitutionalInvestorsBuySell&start_date=2026-10-08&end_date=2026-10-08',
+            finmind_price_all: 'https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&start_date=2026-10-08&end_date=2026-10-08',
+            finmind_chips_2330: 'https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInstitutionalInvestorsBuySell&data_id=2330&start_date=2026-09-01',
+            mis_quote: 'https://mis.twse.com.tw/stock/api/getStockInfo.jsp?json=1&delay=0&ex_ch=tse_2330.tw',
+          };
+          (async () => {
+            for (const [k, u] of Object.entries(urls)) {
+              try {
+                const r = await fetch(u, { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } });
+                const t = await r.text();
+                console.log('RESULT', k, r.status, t.length, t.slice(0, 160).replace(/\\s+/g, ' '));
+              } catch (e) { console.log('RESULT', k, 'ERR', e.message); }
+            }
+          })();
+          EOF
+          node p.js
