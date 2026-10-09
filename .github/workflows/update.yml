@@ -1,0 +1,68 @@
+name: 更新選股
+
+on:
+  schedule:
+    - cron: '45 9 * * 1-5'    # 台灣時間 17:45（週一到週五）
+    - cron: '20 11 * * 1-5'   # 台灣時間 19:20，資料晚公布時再補一次
+  workflow_dispatch:          # 可以在 Actions 頁面手動按「Run workflow」
+  push:                       # 程式有更新時也跑一次
+    branches: [main]
+    paths-ignore: ['last-update.txt', 'README.md', 'CLAUDE.md']
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: update-stock
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 取回之前存的資料
+        uses: actions/cache/restore@v4
+        with:
+          path: store
+          key: store-${{ github.run_id }}
+          restore-keys: store-
+
+      - name: 抓資料並計算推薦
+        run: node build-site.js
+
+      - name: 保存資料給下次用
+        if: always() && hashFiles('store/store.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: store
+          key: store-${{ github.run_id }}
+
+      - name: 記錄最後更新時間（避免 GitHub 60 天後自動停用排程）
+        run: |
+          git config user.name "168-stock-bot"
+          git config user.email "168-stock-bot@users.noreply.github.com"
+          git add last-update.txt
+          git commit -m "更新選股 $(date -u +%F)" || echo "沒有變更"
+          git pull --rebase || true
+          git push || echo "推送失敗，不影響網站"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
