@@ -392,7 +392,8 @@ window.__STATUS__ = /*__STATUS__*/null;
       Object.assign(LQ, j.quotes || {});
       if (got) {
         $('live').classList.toggle('on', inSession());
-        $('liveText').textContent = (inSession() ? '盤中即時價' : '今日收盤價') + (j.time ? `・${j.time}` : '') + (inSession() ? '・每分鐘更新' : '');
+        const delayed = Object.values(j.quotes || {}).some((q) => q && q.s === 'yahoo');
+        $('liveText').textContent = (inSession() ? (delayed ? '盤中報價（約延遲 20 分鐘）' : '盤中即時價') : '今日收盤價') + (j.time ? `・${j.time}` : '') + (inSession() ? '・每分鐘更新' : '');
       }
       paintLive();
     } catch (e) {
