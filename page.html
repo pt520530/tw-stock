@@ -427,8 +427,10 @@ window.__STATUS__ = /*__STATUS__*/null;
     if (!R) return;
     const day = scoreDay(), st = dayStats(day);
     if (!day.items.length) { $('scBody').innerHTML = `<div class="list"><p class="empty">${md(day.d)} 沒有股票通過全部條件，那天沒有推薦。</p></div>`; return; }
-    const asOf = st.live ? (inSession() ? '今天盤中' : '今天收盤') : md(R.asOf) + ' 收盤';
-    const held = day.held + (st.live ? 1 : 0);
+    const todayISO = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+    const fresh = R.asOf === todayISO;   // 資料庫已經是今天收盤，不必再加一天
+    const asOf = fresh ? (inSession() ? '今天盤中' : '今天收盤') : st.live ? '今天盤中' : md(R.asOf) + ' 收盤';
+    const held = day.held + (st.live && !fresh ? 1 : 0);
     const pctN = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
     $('scBody').innerHTML = `
       <p class="small" style="margin-bottom:10px"><b>${md(day.d)} 推薦的 ${st.n} 檔</b>，用當天收盤價買進，算到${asOf}（持有 ${held} 個交易日）${day.retro ? '<span class="tag" style="margin-left:6px">回測</span>' : '<span class="tag" style="margin-left:6px">實際推薦</span>'}</p>
