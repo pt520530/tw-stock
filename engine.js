@@ -427,6 +427,27 @@ function track(store) {
   return { hold: H, stats: out };
 }
 
+// 成績單：最近幾天的「今日推薦」到最新收盤（盤中由網頁用即時價再算一次）各漲跌多少
+function recent(store, days = 10, top = 15) {
+  const D = store.days; if (!D || !D.length) return null;
+  const last = D[D.length - 1];
+  const idx = {}; D.forEach((d, i) => (idx[d.d] = i));
+  const out = [];
+  const picks = (store.picks || []).filter((p) => p.pick && idx[p.d] != null && p.d < last.d).slice(-days);
+  for (const p of picks) {
+    const d0 = D[idx[p.d]];
+    const b0 = d0.c['0050'], b1 = last.c['0050'];
+    const items = [];
+    for (const code of p.pick.slice(0, top)) {
+      const p0 = d0.c[code], p1 = last.c[code];
+      if (!p0) continue;
+      items.push({ c: code, n: (store.names || {})[code] || code, m: (store.mkt || {})[code] === 'O' ? '櫃' : '市', p0, p1: p1 || null });
+    }
+    out.push({ d: p.d, retro: !!p.retro, held: D.length - 1 - idx[p.d], b0: b0 || null, b1: b1 || null, items });
+  }
+  return { asOf: last.d, top, days: out.reverse() };
+}
+
 function recordPicks(store, result, retro) {
   store.picks = (store.picks || []).filter((p) => p.d !== result.date);
   store.picks.push({ d: result.date, retro: !!retro, pick: result.ready.pick ? result.lists.pick : null, swing: result.ready.swing ? result.lists.swing : null, chips: result.ready.chips ? result.lists.chips : null });
@@ -609,8 +630,9 @@ async function runUpdate(store, http, sleep, log, todayISO, progress) {
   recordPicks(store, result, false);
   store.latest = result;
   store.track = track(store);
+  store.recent = recent(store);
   store.updatedAt = new Date().toISOString();
   return { skipped: false, report, result };
 }
 
-if (typeof module !== 'undefined') module.exports = { CFG, LENS, evaluate, track, recordPicks, weather, adrPremium, addDay, buildLineText, runUpdate, rocToISO, num, tableOf };
+if (typeof module !== 'undefined') module.exports = { CFG, LENS, evaluate, track, recent, recordPicks, weather, adrPremium, addDay, buildLineText, runUpdate, rocToISO, num, tableOf };

@@ -29,7 +29,7 @@ const todayTPE = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 
 
 function render(store) {
   const page = fs.readFileSync(path.join(ROOT, 'page.html'), 'utf8');
-  const data = store.latest ? Object.assign({}, store.latest, { track: store.track, generatedAt: store.updatedAt }) : null;
+  const data = store.latest ? Object.assign({}, store.latest, { track: store.track, recent: E.recent(store), generatedAt: store.updatedAt }) : null;
   const js = (x) => JSON.stringify(x).replace(/</g, '\\u003c');
   const body = page.replace('/*__DATA__*/null', js(data)).replace('/*__QURL__*/null', js(QUOTE_URL))
     .replace('/*__STATUS__*/null', js(data ? null : '雲端還在準備第一次的資料，請等 GitHub 的排程跑完再回來看。'));

@@ -118,6 +118,30 @@ header{display:flex;flex-direction:column;gap:6px}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--cyan))}
 .tag{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:1px 7px;background:var(--accent-soft);color:var(--accent);width:fit-content}
 
+/* 推薦成績單 */
+.score{display:flex;flex-direction:column;gap:12px}
+.days{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.days::-webkit-scrollbar{display:none}
+.days button{flex:none;font:inherit;border:0;background:var(--surface);color:var(--ink);border-radius:14px;padding:8px 12px;cursor:pointer;box-shadow:inset 0 0 0 1px var(--line);display:flex;flex-direction:column;align-items:center;gap:1px;min-width:64px}
+.days button b{font-family:var(--font-num);font-size:15px;font-weight:800}
+.days button span{font-size:11px;font-weight:700;color:var(--muted)}
+.days button[aria-selected="true"]{background:var(--ink);color:var(--surface);box-shadow:none}
+.days button[aria-selected="true"] span{color:rgba(255,255,255,.75)}
+.days button:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:2px}
+.sgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+@media (max-width:440px){.sgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.sgrid div{background:var(--surface);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0;box-shadow:var(--shadow)}
+.sgrid span:first-child{font-size:11px;font-weight:700;color:var(--muted)}
+.sgrid b{font-family:var(--font-num);font-size:22px;font-weight:800;line-height:1.15;letter-spacing:-.01em}
+.sgrid small{font-size:11px;color:var(--muted);font-weight:700}
+.srow{display:grid;grid-template-columns:minmax(0,1fr) auto 76px;gap:2px 12px;align-items:center;padding:12px 16px}
+.srow+.srow{border-top:1px solid var(--line)}
+.srow .name{font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srow .name .num{color:var(--accent);font-weight:800;margin-right:8px}
+.srow .path{font-family:var(--font-num);font-size:13px;color:var(--muted);font-weight:700;white-space:nowrap}
+.srow .ret{font-family:var(--font-num);font-size:17px;font-weight:800;text-align:right}
+.scnote{font-size:12px;color:var(--muted)}
+
 details{background:var(--surface);border-radius:14px;padding:12px 16px;box-shadow:var(--shadow)}
 details+details{margin-top:-12px}
 summary{cursor:pointer;font-weight:900}
@@ -140,6 +164,13 @@ footer{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:
 
   <nav class="tabs" role="tablist" id="tabs"></nav>
   <section class="panel" id="panel" role="tabpanel"></section>
+
+  <section class="score" id="score" aria-labelledby="sch">
+    <h2 id="sch">推薦成績單</h2>
+    <p class="intro" id="scIntro"></p>
+    <div class="days" id="scDays" role="tablist"></div>
+    <div id="scBody"></div>
+  </section>
 
   <section class="search" aria-labelledby="sh">
     <h2 id="sh">查一檔股票</h2>
@@ -371,6 +402,67 @@ window.__STATUS__ = /*__STATUS__*/null;
   });
   $('hits').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) showReport(b.dataset.c); });
 
+  // ---- 推薦成績單：前幾天推薦的股票，到現在漲跌多少 ----
+  const R = D.recent && D.recent.days && D.recent.days.length ? D.recent : null;
+  let scIdx = 0;
+  const md = (d) => d.slice(5).replace('-', '/');
+  function scoreDay(){ return R ? R.days[scIdx] : null; }
+  function dayStats(day){
+    const liveNow = (c) => (LQ[c] && LQ[c].p != null && LQ[c].s !== 'yahoo') ? LQ[c].p : null;
+    let live = false;
+    const rows = day.items.map((it) => {
+      const lp = liveNow(it.c); if (lp != null) live = true;
+      const p1 = lp != null ? lp : it.p1;
+      return Object.assign({}, it, { now: p1, r: p1 && it.p0 ? p1 / it.p0 - 1 : null });
+    });
+    const b1 = liveNow('0050') != null ? liveNow('0050') : day.b1;
+    const bench = b1 && day.b0 ? b1 / day.b0 - 1 : null;
+    const ok = rows.filter((x) => x.r != null);
+    const up = ok.filter((x) => x.r > 0).length, beat = bench == null ? null : ok.filter((x) => x.r > bench).length;
+    const avg = ok.length ? ok.reduce((a, x) => a + x.r, 0) / ok.length : null;
+    rows.sort((a, b) => (b.r == null ? -9 : b.r) - (a.r == null ? -9 : a.r));
+    return { rows, n: ok.length, up, beat, avg, bench, live };
+  }
+  function paintScore(){
+    if (!R) return;
+    const day = scoreDay(), st = dayStats(day);
+    if (!day.items.length) { $('scBody').innerHTML = `<div class="list"><p class="empty">${md(day.d)} 沒有股票通過全部條件，那天沒有推薦。</p></div>`; return; }
+    const asOf = st.live ? (inSession() ? '今天盤中' : '今天收盤') : md(R.asOf) + ' 收盤';
+    const held = day.held + (st.live ? 1 : 0);
+    const pctN = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
+    $('scBody').innerHTML = `
+      <p class="small" style="margin-bottom:10px"><b>${md(day.d)} 推薦的 ${st.n} 檔</b>，用當天收盤價買進，算到${asOf}（持有 ${held} 個交易日）${day.retro ? '<span class="tag" style="margin-left:6px">回測</span>' : '<span class="tag" style="margin-left:6px">實際推薦</span>'}</p>
+      <div class="sgrid">
+        <div><span>上漲的比例</span><b class="num">${pctN(st.up, st.n)}</b><small>${st.up} / ${st.n} 檔</small></div>
+        <div><span>贏過 0050</span><b class="num">${st.beat == null ? '—' : pctN(st.beat, st.n)}</b><small>${st.beat == null ? '' : st.beat + ' / ' + st.n + ' 檔'}</small></div>
+        <div><span>平均報酬</span><b class="num ${cls(st.avg)}">${pct(st.avg)}</b><small>每檔買一樣多</small></div>
+        <div><span>同期 0050</span><b class="num ${cls(st.bench)}">${pct(st.bench)}</b><small>大盤當對照</small></div>
+      </div>
+      <div class="list" style="margin-top:12px">${st.rows.map((x) => `<div class="srow">
+        <span class="name"><span class="num">${x.c}</span>${esc(x.n)}</span>
+        <span class="path">${fp(x.p0)} → ${fp(x.now)}</span>
+        <span class="ret ${cls(x.r)}">${pct(x.r)}</span></div>`).join('')}</div>
+      <p class="scnote" style="margin-top:8px">只看推薦清單「全部」的前 ${R.top} 檔。持有天數越短越像運氣，至少看 5 天以上、很多天合起來才有參考價值。這是條件篩選的結果，不是投資建議。</p>`;
+  }
+  function scoreDays(){
+    $('scDays').innerHTML = R.days.map((d, i) => {
+      const st = dayStats(d);
+      return `<button role="tab" aria-selected="${i === scIdx}" data-i="${i}"><b>${md(d.d)}</b><span class="${cls(st.avg)}">${pct(st.avg)}</span></button>`;
+    }).join('');
+  }
+  if (R) {
+    const all = R.days.map(dayStats).filter((s) => s.n);
+    const N = all.reduce((a, s) => a + s.n, 0), U = all.reduce((a, s) => a + s.up, 0);
+    $('scIntro').innerHTML = `每天的「今日推薦」都會留下紀錄，這裡看它們推薦之後到現在漲跌多少。最近 ${R.days.length} 個交易日共推薦 ${N} 檔次，目前 <b>${N ? Math.round(U / N * 100) : 0}% 是上漲的</b>。點日期看每一天的明細。`;
+    scoreDays(); paintScore();
+    $('scDays').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      scIdx = +b.dataset.i; scoreDays(); paintScore(); refreshLive();
+    });
+  } else {
+    $('scIntro').textContent = '推薦紀錄累積中，下一個交易日就會出現第一筆成績。';
+  }
+
   // ---- 盤中即時報價（雲端版經 Cloudflare 轉接，本機版由本機程式提供）----
   const QURL = window.__QURL__ || (/\/webhook(-test)?\//.test(location.pathname) ? location.pathname.replace(/\/tw-stock\/?$/, '/tw-stock-quote') : null);
   const LIVE = !!QURL;
@@ -382,10 +474,13 @@ window.__STATUS__ = /*__STATUS__*/null;
   async function refreshLive(){
     if (!LIVE || busy || !afterOpen()) return;
     const want = new Set(listOf(current)); if (reportCode) want.add(reportCode);
+    const scDay = scoreDay();
+    if (scDay) { scDay.items.forEach((it) => want.add(it.c)); want.add('0050'); }
     if (!want.size) return;
     busy = true;
     try {
-      const otc = [...want].filter((c) => S[c] && S[c].m === '櫃');
+      const isOtc = (c) => (S[c] && S[c].m === '櫃') || (scDay && scDay.items.some((it) => it.c === c && it.m === '櫃'));
+      const otc = [...want].filter(isOtc);
       const r = await fetch(QURL + '?codes=' + [...want].join(',') + (otc.length ? '&otc=' + otc.join(',') : ''), { cache: 'no-store' });
       const j = await r.json();
       const got = Object.keys(j.quotes || {}).length;
@@ -395,7 +490,7 @@ window.__STATUS__ = /*__STATUS__*/null;
         const delayed = Object.values(j.quotes || {}).some((q) => q && q.s === 'yahoo');
         $('liveText').textContent = (inSession() ? (delayed ? '盤中報價（約延遲 20 分鐘）' : '盤中即時價') : '今日收盤價') + (j.time ? `・${j.time}` : '') + (inSession() ? '・每分鐘更新' : '');
       }
-      paintLive();
+      paintLive(); if (got && R) { scoreDays(); paintScore(); }
     } catch (e) {
       $('liveText').textContent = '即時報價暫時連不上，先顯示前一次收盤價';
     }
