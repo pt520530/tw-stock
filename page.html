@@ -134,13 +134,15 @@ header{display:flex;flex-direction:column;gap:6px}
 .sgrid span:first-child{font-size:11px;font-weight:700;color:var(--muted)}
 .sgrid b{font-family:var(--font-num);font-size:22px;font-weight:800;line-height:1.15;letter-spacing:-.01em}
 .sgrid small{font-size:11px;color:var(--muted);font-weight:700}
-.srow{display:grid;grid-template-columns:minmax(0,1fr) auto 76px;gap:2px 12px;align-items:center;padding:12px 16px}
+.srow{display:grid;grid-template-columns:minmax(0,1fr) 76px;grid-template-areas:"name ret" "path ret";gap:2px 12px;align-items:center;padding:12px 16px}
+.srow .name{grid-area:name}.srow .path{grid-area:path}.srow .ret{grid-area:ret}
 .srow+.srow{border-top:1px solid var(--line)}
 .srow .name{font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .srow .name .num{color:var(--accent);font-weight:800;margin-right:8px}
 .srow .path{font-family:var(--font-num);font-size:13px;color:var(--muted);font-weight:700;white-space:nowrap}
 .srow .ret{font-family:var(--font-num);font-size:17px;font-weight:800;text-align:right}
 .scnote{font-size:12px;color:var(--muted)}
+.srow .sc{font-family:var(--font-num);font-size:11px;font-weight:800;background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:1px 6px;margin-right:8px;vertical-align:1px}
 
 details{background:var(--surface);border-radius:14px;padding:12px 16px;box-shadow:var(--shadow)}
 details+details{margin-top:-12px}
@@ -443,9 +445,21 @@ window.__STATUS__ = /*__STATUS__*/null;
       </div>
       <div class="list" style="margin-top:12px">${st.rows.map((x) => `<div class="srow">
         <span class="name"><span class="num">${x.c}</span>${esc(x.n)}</span>
-        <span class="path">${fp(x.p0)} → ${fp(x.now)}</span>
+        <span class="path">${x.sc != null ? `<span class="sc">${x.sc} 分</span>` : ''}${fp(x.p0)} → ${fp(x.now)}</span>
         <span class="ret ${cls(x.r)}">${pct(x.r)}</span></div>`).join('')}</div>
+      ${byScore(st.rows)}
       <p class="scnote" style="margin-top:8px">只看推薦清單「全部」的前 ${R.top} 檔。持有天數越短越像運氣，至少看 5 天以上、很多天合起來才有參考價值。這是條件篩選的結果，不是投資建議。</p>`;
+  }
+  // 依推薦分數分組：分數越高是不是真的表現越好
+  function byScore(rows){
+    const g = {};
+    rows.forEach((x) => { if (x.sc == null || x.r == null) return; (g[x.sc] = g[x.sc] || []).push(x.r); });
+    const ks = Object.keys(g).map(Number).sort((a, b) => b - a);
+    if (ks.length < 2) return '';
+    return `<div class="list" style="margin-top:12px;padding:12px 16px;gap:6px"><b style="font-size:14px">依推薦分數看</b>` + ks.map((k) => {
+      const a = g[k], avg = a.reduce((s, v) => s + v, 0) / a.length, up = a.filter((v) => v > 0).length;
+      return `<div class="small" style="display:flex;justify-content:space-between;gap:8px"><span><b class="num">${k} 分</b>　${a.length} 檔，上漲 ${up} 檔</span><span class="num ${cls(avg)}" style="font-weight:800">平均 ${pct(avg)}</span></div>`;
+    }).join('') + `</div>`;
   }
   function scoreDays(){
     $('scDays').innerHTML = R.days.map((d, i) => {

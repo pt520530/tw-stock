@@ -438,10 +438,17 @@ function recent(store, days = 10, top = 15) {
     const d0 = D[idx[p.d]];
     const b0 = d0.c['0050'], b1 = last.c['0050'];
     const items = [];
+    let ev = null; // 舊紀錄沒存分數時，用當天資料重算一次（同一套資料，結果相同）
+    const scoreOf = (code) => {
+      if (p.sc && p.sc[code] != null) return p.sc[code];
+      if (!ev) { try { ev = evaluate(store, idx[p.d], null); } catch (e) { ev = { stocks: {} }; } }
+      const st = ev.stocks && ev.stocks[code];
+      return st && st.pick ? st.pick.score : null;
+    };
     for (const code of p.pick.slice(0, top)) {
       const p0 = d0.c[code], p1 = last.c[code];
       if (!p0) continue;
-      items.push({ c: code, n: (store.names || {})[code] || code, m: (store.mkt || {})[code] === 'O' ? '櫃' : '市', p0, p1: p1 || null });
+      items.push({ c: code, n: (store.names || {})[code] || code, m: (store.mkt || {})[code] === 'O' ? '櫃' : '市', p0, p1: p1 || null, sc: scoreOf(code) });
     }
     out.push({ d: p.d, retro: !!p.retro, held: D.length - 1 - idx[p.d], b0: b0 || null, b1: b1 || null, items });
   }
@@ -450,7 +457,7 @@ function recent(store, days = 10, top = 15) {
 
 function recordPicks(store, result, retro) {
   store.picks = (store.picks || []).filter((p) => p.d !== result.date);
-  store.picks.push({ d: result.date, retro: !!retro, pick: result.ready.pick ? result.lists.pick : null, swing: result.ready.swing ? result.lists.swing : null, chips: result.ready.chips ? result.lists.chips : null });
+  store.picks.push({ d: result.date, retro: !!retro, pick: result.ready.pick ? result.lists.pick : null, sc: result.ready.pick ? Object.fromEntries(result.lists.pick.map((c) => [c, result.stocks[c].pick.score])) : null, swing: result.ready.swing ? result.lists.swing : null, chips: result.ready.chips ? result.lists.chips : null });
   store.picks.sort((a, b) => (a.d < b.d ? -1 : 1));
   const first = store.days[0] && store.days[0].d;
   store.picks = store.picks.filter((p) => p.d >= first);
