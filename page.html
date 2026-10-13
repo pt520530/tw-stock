@@ -407,15 +407,17 @@ window.__STATUS__ = /*__STATUS__*/null;
   let scIdx = 0;
   const md = (d) => d.slice(5).replace('-', '/');
   function scoreDay(){ return R ? R.days[scIdx] : null; }
+  const todayTPE = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+  // 只有「今天」的即時價才算數（假日打開時報價是上一個交易日的，不能當成今天）
+  const liveNow = (c) => { const q = LQ[c]; return q && q.p != null && q.s !== 'yahoo' && q.d === todayTPE() ? q.p : null; };
   function dayStats(day){
-    const liveNow = (c) => (LQ[c] && LQ[c].p != null && LQ[c].s !== 'yahoo') ? LQ[c].p : null;
-    let live = false;
+    // 整天的股票＋0050 都拿到今天的即時價才用即時價，不然全部用資料庫的收盤價，避免新舊價格混在一起比
+    const live = R.asOf < todayTPE() && liveNow('0050') != null && day.items.every((it) => it.p1 == null || liveNow(it.c) != null);
     const rows = day.items.map((it) => {
-      const lp = liveNow(it.c); if (lp != null) live = true;
-      const p1 = lp != null ? lp : it.p1;
+      const p1 = live && liveNow(it.c) != null ? liveNow(it.c) : it.p1;
       return Object.assign({}, it, { now: p1, r: p1 && it.p0 ? p1 / it.p0 - 1 : null });
     });
-    const b1 = liveNow('0050') != null ? liveNow('0050') : day.b1;
+    const b1 = live ? liveNow('0050') : day.b1;
     const bench = b1 && day.b0 ? b1 / day.b0 - 1 : null;
     const ok = rows.filter((x) => x.r != null);
     const up = ok.filter((x) => x.r > 0).length, beat = bench == null ? null : ok.filter((x) => x.r > bench).length;
@@ -427,10 +429,9 @@ window.__STATUS__ = /*__STATUS__*/null;
     if (!R) return;
     const day = scoreDay(), st = dayStats(day);
     if (!day.items.length) { $('scBody').innerHTML = `<div class="list"><p class="empty">${md(day.d)} 沒有股票通過全部條件，那天沒有推薦。</p></div>`; return; }
-    const todayISO = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
-    const fresh = R.asOf === todayISO;   // 資料庫已經是今天收盤，不必再加一天
-    const asOf = fresh ? (inSession() ? '今天盤中' : '今天收盤') : st.live ? '今天盤中' : md(R.asOf) + ' 收盤';
-    const held = day.held + (st.live && !fresh ? 1 : 0);
+    const fresh = R.asOf === todayTPE();   // 資料庫已經是今天收盤
+    const asOf = fresh ? '今天收盤' : st.live ? (inSession() ? '今天盤中' : '今天收盤') : md(R.asOf) + ' 收盤';
+    const held = day.held + (st.live ? 1 : 0);
     const pctN = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
     $('scBody').innerHTML = `
       <p class="small" style="margin-bottom:10px"><b>${md(day.d)} 推薦的 ${st.n} 檔</b>，用當天收盤價買進，算到${asOf}（持有 ${held} 個交易日）${day.retro ? '<span class="tag" style="margin-left:6px">回測</span>' : '<span class="tag" style="margin-left:6px">實際推薦</span>'}</p>
@@ -485,7 +486,7 @@ window.__STATUS__ = /*__STATUS__*/null;
       const otc = [...want].filter(isOtc);
       const r = await fetch(QURL + '?codes=' + [...want].join(',') + (otc.length ? '&otc=' + otc.join(',') : ''), { cache: 'no-store' });
       const j = await r.json();
-      const got = Object.keys(j.quotes || {}).length;
+      const got = Object.values(j.quotes || {}).filter((q) => q && q.d === todayTPE()).length;
       Object.assign(LQ, j.quotes || {});
       if (got) {
         $('live').classList.toggle('on', inSession());
