@@ -230,7 +230,7 @@ window.__STATUS__ = /*__STATUS__*/null;
   }
 
   const S = D.stocks || {};
-  $('title').textContent = '今日選股 ' + D.date.replace(/-/g,'/');
+  $('title').textContent = '選股名單・' + D.date.slice(5).replace('-','/') + ' 收盤後選出';
   const gen = D.generatedAt ? new Date(D.generatedAt) : null;
   $('fresh').textContent = `上市＋上櫃共 ${D.universe} 檔（20 日均量 500 張以上）・更新於 ${gen ? gen.toLocaleString('zh-TW',{timeZone:'Asia/Taipei',hour12:false}) : '—'}`;
   if (D.sources) {
@@ -486,7 +486,7 @@ window.__STATUS__ = /*__STATUS__*/null;
   function tpeNow(){ const t = new Date(Date.now() + 8 * 3600e3); return { dow: t.getUTCDay(), min: t.getUTCHours() * 60 + t.getUTCMinutes() }; }
   function inSession(){ const n = tpeNow(); return n.dow >= 1 && n.dow <= 5 && n.min >= 540 && n.min <= 815; }
   function afterOpen(){ const n = tpeNow(); return n.dow >= 1 && n.dow <= 5 && n.min >= 540; }
-  $('liveText').textContent = `收盤價・${D.date.replace(/-/g,'/')}` + (LIVE ? '' : D.sample ? '（示範資料）' : '・每個交易日傍晚自動更新');
+  $('liveText').textContent = `價格：${D.date.slice(5).replace('-','/')} 收盤價` + (LIVE ? '' : D.sample ? '（示範資料）' : '・每個交易日傍晚自動更新');
   let busy = false;
   async function refreshLive(){
     if (!LIVE || busy || !afterOpen()) return;
@@ -505,7 +505,7 @@ window.__STATUS__ = /*__STATUS__*/null;
       if (got) {
         $('live').classList.toggle('on', inSession());
         const delayed = Object.values(j.quotes || {}).some((q) => q && q.s === 'yahoo');
-        $('liveText').textContent = (inSession() ? (delayed ? '盤中報價（約延遲 20 分鐘）' : '盤中即時價') : '今日收盤價') + (j.time ? `・${j.time}` : '') + (inSession() ? '・每分鐘更新' : '');
+        $('liveText').textContent = '價格：' + (inSession() ? (delayed ? '盤中報價（約延遲 20 分鐘）' : '盤中即時') : '今天收盤價') + (j.time ? `（${j.time.slice(0,5)}）` : '') + (inSession() ? '・每分鐘更新' : '');
       }
       paintLive(); if (got && R) { scoreDays(); paintScore(); }
     } catch (e) {
