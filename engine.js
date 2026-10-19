@@ -14,7 +14,7 @@ const CFG = {
 
 const LENS = {
   pick: { name: '推薦', checks: [] },
-  swing: { name: '波段', checks: ['均線多頭排列', '月線往上', '今天量增', '沒有追太高'] },
+  swing: { name: '波段', checks: ['均線多頭排列', '月線往上', '價漲量增', '沒有追太高'] },
   chips: { name: '籌碼', checks: ['投信連買 3 天', '投信 3 日買超 ≥ 100 張', '外資 5 日買超', '三大法人 5 日買超'] },
 };
 
@@ -297,14 +297,16 @@ function evaluate(store, i, val) {
     if (m20 != null && m60 != null && m20p != null) {
       const v = day.v[code] || 0, v5 = avgVol(D, code, i - 5, i - 1);
       const vr = v5 ? v / v5 : 0;
-      const ok = [close > m20 && m20 > m60, m20 > m20p, vr >= 1.5, close <= m20 * 1.1];
+      const pc = prev && prev.c[code], chg = pc ? close / pc - 1 : null;
+      // 量增要配上收紅才算好訊號；爆量下跌通常是有人在賣，不能加分
+      const ok = [close > m20 && m20 > m60, m20 > m20p, vr >= 1.5 && chg != null && chg >= 0, close <= m20 * 1.1];
       withMA++; if (ok[0]) bullish++;
       s.swing = {
         ok,
         t: [
           `收盤 ${close} ${close > m20 ? '>' : '≤'} 月線 ${r1(m20)} ${m20 > m60 ? '>' : '≤'} 季線 ${r1(m60)}`,
           `月線一週前 ${r1(m20p)} → 現在 ${r1(m20)}`,
-          `今天成交量是前 5 日平均的 ${vr.toFixed(1)} 倍`,
+          `今天股價 ${pct(chg)}，成交量是前 5 日平均的 ${vr.toFixed(1)} 倍`,
           `離月線 ${pct(close / m20 - 1)}`,
         ],
         k: vr,

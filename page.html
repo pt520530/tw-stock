@@ -142,6 +142,7 @@ header{display:flex;flex-direction:column;gap:6px}
 .srow .path{font-family:var(--font-num);font-size:13px;color:var(--muted);font-weight:700;white-space:nowrap}
 .srow .ret{font-family:var(--font-num);font-size:17px;font-weight:800;text-align:right}
 .scnote{font-size:12px;color:var(--muted)}
+.plan{background:var(--accent-soft);border-radius:14px;padding:12px 14px}
 .srow .sc{font-family:var(--font-num);font-size:11px;font-weight:800;background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:1px 6px;margin-right:8px;vertical-align:1px}
 
 details{background:var(--surface);border-radius:14px;padding:12px 16px;box-shadow:var(--shadow)}
@@ -214,8 +215,8 @@ window.__STATUS__ = /*__STATUS__*/null;
   const cls = (x) => x == null ? '' : x > 0 ? 'up' : x < 0 ? 'down' : '';
   const LENS = {
     pick:{name:'推薦', checks:[],
-      intro:'<b>阿誠今天先看這幾檔。</b>把波段 4 項和籌碼 4 項合在一起打分數，每項 12.5 分，過 6 項（75 分）以上、站在季線上、近四季有賺錢的公司才會列出。分數一樣時，今天量能越大越前面。'},
-    swing:{name:'波段', checks:['均線多頭排列','月線往上','今天量增','沒有追太高'],
+      intro:'<b>怎麼看這張表：</b>①每檔股票檢查 8 個條件（技術面 4 個＋法人買賣 4 個），過一項 12.5 分，75 分以上才列出。②每一列的灰字寫「還差哪一項」和「現在適不適合進場」。③點開那一檔，最上面的「怎麼操作」有參考買點和停損價。名單是觀察清單，不是叫你今天全部買，先搭配下方的成績單看準不準。'},
+    swing:{name:'波段', checks:['均線多頭排列','月線往上','價漲量增','沒有追太高'],
       intro:'<b>適合抱幾週到幾個月的人。</b>趨勢向上、今天有資金進場、但股價還沒離月線太遠。常見停損做法是跌破月線就出場。'},
     chips:{name:'籌碼', checks:['投信連買 3 天','投信 3 日買超 ≥ 100 張','外資 5 日買超','三大法人 5 日買超'],
       intro:'<b>跟著法人的腳步。</b>投信連續買進，外資和三大法人整體也站在買方。依投信買超佔成交量的比例排序。'},
@@ -285,7 +286,24 @@ window.__STATUS__ = /*__STATUS__*/null;
     if (k === 'swing') return s.swing.t[2];
     if (k === 'chips') return s.chips.t[0] + '・' + s.chips.t[1].replace('投信近 3 日合計 ','3 日');
     const ok = s.swing.ok.concat(s.chips.ok), L = LENS.swing.checks.concat(LENS.chips.checks);
-    return `${s.pick.score} 分・` + L.filter((_, i) => ok[i]).slice(0, 3).join('、');
+    const miss = L.filter((_, i) => !ok[i]);
+    return `${s.pick.score} 分・${miss.length ? '還差：' + miss.join('、') : '8 項全過'}・${plan(code).short}`;
+  }
+  // 依「離月線多遠」給新手一句話的操作參考
+  function plan(c){
+    const s = S[c], lv = s.lv || {}, p = nowPx(c);
+    if (!lv.ma20 || !p) return { short: '資料不足', html: '' };
+    const d = p / lv.ma20 - 1, stopPct = lv.stop ? lv.stop / p - 1 : null, hiPct = lv.hi60 ? lv.hi60 / p - 1 : null;
+    let short, say;
+    if (d < 0) { short = '跌破月線，先觀察'; say = '股價已經跌到月線下面，趨勢轉弱，先不要進場，等站回月線再說。'; }
+    else if (d <= 0.03) { short = '貼近月線，可留意'; say = '股價就在月線附近，萬一看錯，離停損也不遠，是相對好的進場位置。'; }
+    else if (d <= 0.07) { short = '可分批，或等拉回'; say = '已經離月線一小段，想買可以先買一部分，剩下等拉回月線附近再補。'; }
+    else { short = '漲多了，等拉回'; say = '已經離月線一段距離，現在追進去，萬一回檔會虧比較多，建議等拉回月線附近再看。'; }
+    const html = `<div class="lens plan"><h3>怎麼操作（參考）</h3><p class="small">${say}</p><dl class="levels" style="margin-top:8px">
+      <dt>參考買點</dt><dd>${fp(lv.ma20)} ～ ${fp(lv.ma20 * 1.03)}<small>月線到月線上 3%</small></dd>
+      <dt>停損價</dt><dd>${fp(lv.stop)}<small>${stopPct == null ? '' : '離現價 ' + pct(stopPct)}，收盤跌破就出場</small></dd>
+      <dt>上方壓力</dt><dd>${fp(lv.hi60)}<small>${hiPct == null ? '' : '近 3 個月最高，離現價 ' + pct(hiPct)}</small></dd></dl></div>`;
+    return { short, html };
   }
   // ---- 價格：收盤資料＋盤中即時 ----
   const LQ = {};   // 即時報價
@@ -371,7 +389,7 @@ window.__STATUS__ = /*__STATUS__*/null;
         ${spark(c, 68, 30).replace('<svg ', `<svg data-c="${c}" `)}
         <span class="px" data-live="px" data-c="${c}">${fp(nowPx(c))}</span>
         <span class="chg"><span class="${cls(nowCh(c))}" data-live="chg" data-c="${c}">${arrow(nowCh(c))} ${pct(nowCh(c))}</span><span class="dots" aria-hidden="true">${dots(c,current)}</span></span>
-      </button><div class="detail" hidden>${priceBlock(c)}${pickBlock(c)}${['swing','chips'].map((k) => lensBlock(c,k)).join('')}</div></div>`;
+      </button><div class="detail" hidden>${current === 'pick' ? plan(c).html : ''}${pickBlock(c)}${priceBlock(c)}${['swing','chips'].map((k) => lensBlock(c,k)).join('')}</div></div>`;
     }).join('') + `</div>`;
     $('panel').innerHTML = html;
     $('panel').setAttribute('aria-labelledby','tab-'+current);
