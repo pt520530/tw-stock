@@ -143,6 +143,10 @@ header{display:flex;flex-direction:column;gap:6px}
 .srow .ret{font-family:var(--font-num);font-size:17px;font-weight:800;text-align:right}
 .scnote{font-size:12px;color:var(--muted)}
 .plan{background:var(--accent-soft);border-radius:14px;padding:12px 14px}
+.sigrow{display:flex;gap:10px;align-items:flex-start}
+.sig{flex:none;display:inline-block;font-size:12px;font-weight:900;border-radius:7px;padding:1px 8px;margin-right:6px;color:#fff;vertical-align:1px}
+.sig.buy{background:var(--up)} .sig.wait{background:var(--warn)} .sig.no{background:var(--down)} .sig.hold{background:var(--accent)}
+.rules{margin:4px 0 0;padding-left:20px;font-size:13.5px;display:flex;flex-direction:column;gap:4px}
 .srow .sc{font-family:var(--font-num);font-size:11px;font-weight:800;background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:1px 6px;margin-right:8px;vertical-align:1px}
 
 details{background:var(--surface);border-radius:14px;padding:12px 16px;box-shadow:var(--shadow)}
@@ -215,7 +219,7 @@ window.__STATUS__ = /*__STATUS__*/null;
   const cls = (x) => x == null ? '' : x > 0 ? 'up' : x < 0 ? 'down' : '';
   const LENS = {
     pick:{name:'推薦', checks:[],
-      intro:'<b>怎麼看這張表：</b>①每檔股票檢查 8 個條件（技術面 4 個＋法人買賣 4 個），過一項 12.5 分，75 分以上才列出。②每一列的灰字寫「還差哪一項」和「現在適不適合進場」。③點開那一檔，最上面的「怎麼操作」有參考買點和停損價。名單是觀察清單，不是叫你今天全部買，先搭配下方的成績單看準不準。'},
+      intro:'<b>怎麼看：</b>每一列最前面的色塊就是訊號——<b style="color:var(--up)">買進區</b>＝價格合適可以分批買、<b style="color:var(--warn)">等拉回</b>＝漲多了先等、<b style="color:var(--down)">先別買</b>＝趨勢轉弱。點開任一檔，會寫出具體的買點價格和三條賣出規則（停損、停利、出場）。分數是 8 個條件過幾項，75 分以上才會列出。'},
     swing:{name:'波段', checks:['均線多頭排列','月線往上','價漲量增','沒有追太高'],
       intro:'<b>適合抱幾週到幾個月的人。</b>趨勢向上、今天有資金進場、但股價還沒離月線太遠。常見停損做法是跌破月線就出場。'},
     chips:{name:'籌碼', checks:['投信連買 3 天','投信 3 日買超 ≥ 100 張','外資 5 日買超','三大法人 5 日買超'],
@@ -287,23 +291,39 @@ window.__STATUS__ = /*__STATUS__*/null;
     if (k === 'chips') return s.chips.t[0] + '・' + s.chips.t[1].replace('投信近 3 日合計 ','3 日');
     const ok = s.swing.ok.concat(s.chips.ok), L = LENS.swing.checks.concat(LENS.chips.checks);
     const miss = L.filter((_, i) => !ok[i]);
-    return `${s.pick.score} 分・${miss.length ? '還差：' + miss.join('、') : '8 項全過'}・${plan(code).short}`;
+    const pl = plan(code);
+    return `<span class="sig ${pl.sig}">${pl.label}</span>${s.pick.score} 分・${miss.length ? '還差：' + miss.join('、') : '8 項全過'}`;
   }
-  // 依「離月線多遠」給新手一句話的操作參考
+  // 買賣訊號：用固定規則給新手「現在能不能買、什麼時候賣」，價格都寫出來
   function plan(c){
     const s = S[c], lv = s.lv || {}, p = nowPx(c);
-    if (!lv.ma20 || !p) return { short: '資料不足', html: '' };
-    const d = p / lv.ma20 - 1, stopPct = lv.stop ? lv.stop / p - 1 : null, hiPct = lv.hi60 ? lv.hi60 / p - 1 : null;
-    let short, say;
-    if (d < 0) { short = '跌破月線，先觀察'; say = '股價已經跌到月線下面，趨勢轉弱，先不要進場，等站回月線再說。'; }
-    else if (d <= 0.03) { short = '貼近月線，可留意'; say = '股價就在月線附近，萬一看錯，離停損也不遠，是相對好的進場位置。'; }
-    else if (d <= 0.07) { short = '可分批，或等拉回'; say = '已經離月線一小段，想買可以先買一部分，剩下等拉回月線附近再補。'; }
-    else { short = '漲多了，等拉回'; say = '已經離月線一段距離，現在追進去，萬一回檔會虧比較多，建議等拉回月線附近再看。'; }
-    const html = `<div class="lens plan"><h3>怎麼操作（參考）</h3><p class="small">${say}</p><dl class="levels" style="margin-top:8px">
-      <dt>參考買點</dt><dd>${fp(lv.ma20)} ～ ${fp(lv.ma20 * 1.03)}<small>月線到月線上 3%</small></dd>
-      <dt>停損價</dt><dd>${fp(lv.stop)}<small>${stopPct == null ? '' : '離現價 ' + pct(stopPct)}，收盤跌破就出場</small></dd>
-      <dt>上方壓力</dt><dd>${fp(lv.hi60)}<small>${hiPct == null ? '' : '近 3 個月最高，離現價 ' + pct(hiPct)}</small></dd></dl></div>`;
-    return { short, html };
+    if (!lv.ma20 || !p) return { sig: 'wait', label: '資料不足', short: '資料不足', html: '' };
+    const buyLo = lv.ma20, buyHi = lv.ma20 * 1.03, stop = lv.stop, tp = buyHi * 1.10;
+    let sig, label, say;
+    if (p < stop) { sig = 'no'; label = '不要買'; say = `股價已經跌破停損價 ${fp(stop)}，趨勢轉壞，不要買。`; }
+    else if (p < buyLo) { sig = 'no'; label = '先別買'; say = `股價跌到月線 ${fp(buyLo)} 下面，先觀察，等收盤站回 ${fp(buyLo)} 以上再考慮。`; }
+    else if (p <= buyHi) { sig = 'buy'; label = '買進區'; say = `現在價格在買進區（${fp(buyLo)}～${fp(buyHi)}）裡面，可以考慮分批買進。`; }
+    else { sig = 'wait'; label = '等拉回'; say = `已經漲離買進區，現在追高風險大。等價格回到 ${fp(buyHi)} 以下再買。`; }
+    const html = `<div class="lens plan"><div class="sigrow"><span class="sig ${sig}">${label}</span><span class="small">${say}</span></div>
+      <h3 style="margin-top:12px">🟢 買點規則</h3>
+      <p class="small">價格回到 <b class="num">${fp(buyLo)} ～ ${fp(buyHi)}</b>（月線到月線上 3%）才買，不追高。建議分 2～3 次買。</p>
+      <h3 style="margin-top:10px">🔴 賣點規則（買了之後照這個做）</h3>
+      <ol class="rules">
+        <li><b>停損：</b>收盤跌破 <b class="num">${fp(stop)}</b> → 隔天全部賣掉，不要凹。</li>
+        <li><b>停利：</b>漲到 <b class="num">${fp(tp)}</b>（買進區上緣再賺 10%）→ 先賣一半，把獲利放口袋。</li>
+        <li><b>出場：</b>剩下的一半，等哪天收盤跌破月線（目前 <b class="num">${fp(lv.ma20)}</b>，每天會變）→ 全部賣掉。</li>
+      </ol>
+      <p class="scnote" style="margin-top:6px">月線每天會移動，買了之後每天回來看這一頁的最新價格。以上是固定規則的提示，不是投資建議。</p></div>`;
+    return { sig, label, short: label, html };
+  }
+  // 成績單用：買了之後現在該怎麼做（用最新的月線與停損）
+  function exitHint(c, r){
+    const s = S[c]; if (!s || !s.lv || !s.lv.ma20) return '';
+    const p = nowPx(c), lv = s.lv;
+    if (p < lv.stop) return '<span class="sig no">該停損</span>';
+    if (r != null && r >= 0.10) return '<span class="sig buy">先賣一半</span>';
+    if (p < lv.ma20) return '<span class="sig no">跌破月線・賣出</span>';
+    return '<span class="sig hold">續抱</span>';
   }
   // ---- 價格：收盤資料＋盤中即時 ----
   const LQ = {};   // 即時報價
@@ -385,7 +405,7 @@ window.__STATUS__ = /*__STATUS__*/null;
       const s = S[c];
       return `<div class="item"><button class="row" aria-expanded="false" data-c="${c}">
         <span class="name"><span class="num">${c}</span>${esc(s.n)}<span class="mtag">${s.m==='櫃'?'上櫃':'上市'}</span></span>
-        <span class="why">${esc(headline(c,current))}</span>
+        <span class="why">${current === 'pick' ? headline(c,current) : esc(headline(c,current))}</span>
         ${spark(c, 68, 30).replace('<svg ', `<svg data-c="${c}" `)}
         <span class="px" data-live="px" data-c="${c}">${fp(nowPx(c))}</span>
         <span class="chg"><span class="${cls(nowCh(c))}" data-live="chg" data-c="${c}">${arrow(nowCh(c))} ${pct(nowCh(c))}</span><span class="dots" aria-hidden="true">${dots(c,current)}</span></span>
@@ -463,7 +483,7 @@ window.__STATUS__ = /*__STATUS__*/null;
       </div>
       <div class="list" style="margin-top:12px">${st.rows.map((x) => `<div class="srow">
         <span class="name"><span class="num">${x.c}</span>${esc(x.n)}</span>
-        <span class="path">${x.sc != null ? `<span class="sc">${x.sc} 分</span>` : ''}${fp(x.p0)} → ${fp(x.now)}</span>
+        <span class="path">${x.sc != null ? `<span class="sc">${x.sc} 分</span>` : ''}${fp(x.p0)} → ${fp(x.now)} ${exitHint(x.c, x.r)}</span>
         <span class="ret ${cls(x.r)}">${pct(x.r)}</span></div>`).join('')}</div>
       ${byScore(st.rows)}
       <p class="scnote" style="margin-top:8px">只看推薦清單「全部」的前 ${R.top} 檔。持有天數越短越像運氣，至少看 5 天以上、很多天合起來才有參考價值。這是條件篩選的結果，不是投資建議。</p>`;
