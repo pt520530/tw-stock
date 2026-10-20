@@ -457,6 +457,45 @@ function recent(store, days = 10, top = 15) {
   return { asOf: last.d, top, days: out.reverse() };
 }
 
+// 漏網之魚：每個推薦日之後，全市場漲最多的股票有沒有被選到？沒選到是卡在哪個條件？
+function missed(store, days = 5, top = 10) {
+  const D = store.days; if (!D || D.length < 2) return null;
+  const last = D[D.length - 1];
+  const idx = {}; D.forEach((d, i) => (idx[d.d] = i));
+  const labels = LENS.swing.checks.concat(LENS.chips.checks);
+  const picks = (store.picks || []).filter((p) => p.pick && idx[p.d] != null && p.d < last.d).slice(-days);
+  const out = [], blockers = {}; let winners = 0, caught = 0;
+  for (const p of picks) {
+    const i = idx[p.d], d0 = D[i];
+    let ev; try { ev = evaluate(store, i, null); } catch (e) { continue; }
+    const shown = new Set(p.pick.slice(0, 15));
+    const rows = [];
+    for (const code of Object.keys(ev.stocks)) {
+      const p0 = d0.c[code], p1 = last.c[code];
+      if (!p0 || !p1) continue;
+      rows.push({ code, r: p1 / p0 - 1 });
+    }
+    if (!rows.length) continue;
+    const allAvg = rows.reduce((a, x) => a + x.r, 0) / rows.length;
+    rows.sort((a, b) => b.r - a.r);
+    const items = rows.slice(0, top).map(({ code, r }) => {
+      const st = ev.stocks[code] || {};
+      const ok = st.swing && st.chips ? st.swing.ok.concat(st.chips.ok) : null;
+      const why = [];
+      if (ok) ok.forEach((v, k) => { if (!v) why.push(labels[k]); });
+      else why.push(st.swing ? '法人資料不足' : '均線資料不足');
+      if (st.pick && !st.pick.trend) why.push('在季線下');
+      if (st.pick && st.pick.profit === false) why.push('近四季虧損');
+      const picked = shown.has(code);
+      winners++; if (picked) caught++; else why.forEach((w) => (blockers[w] = (blockers[w] || 0) + 1));
+      return { c: code, n: (store.names || {})[code] || code, m: (store.mkt || {})[code] === 'O' ? '櫃' : '市', r, sc: st.pick ? st.pick.score : null, picked, why };
+    });
+    out.push({ d: p.d, held: D.length - 1 - i, allAvg, items });
+  }
+  const top3 = Object.entries(blockers).sort((a, b) => b[1] - a[1]);
+  return { asOf: last.d, top, winners, caught, blockers: top3, days: out.reverse() };
+}
+
 function recordPicks(store, result, retro) {
   store.picks = (store.picks || []).filter((p) => p.d !== result.date);
   store.picks.push({ d: result.date, retro: !!retro, pick: result.ready.pick ? result.lists.pick : null, sc: result.ready.pick ? Object.fromEntries(result.lists.pick.map((c) => [c, result.stocks[c].pick.score])) : null, swing: result.ready.swing ? result.lists.swing : null, chips: result.ready.chips ? result.lists.chips : null });
@@ -644,4 +683,4 @@ async function runUpdate(store, http, sleep, log, todayISO, progress) {
   return { skipped: false, report, result };
 }
 
-if (typeof module !== 'undefined') module.exports = { CFG, LENS, evaluate, track, recent, recordPicks, weather, adrPremium, addDay, buildLineText, runUpdate, rocToISO, num, tableOf };
+if (typeof module !== 'undefined') module.exports = { CFG, LENS, evaluate, track, recent, missed, recordPicks, weather, adrPremium, addDay, buildLineText, runUpdate, rocToISO, num, tableOf };

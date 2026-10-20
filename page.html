@@ -179,6 +179,12 @@ footer{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:
     <div id="scBody"></div>
   </section>
 
+  <section class="score" id="miss" aria-labelledby="mh" hidden>
+    <h2 id="mh">漏網之魚</h2>
+    <p class="intro" id="mIntro"></p>
+    <div id="mBody"></div>
+  </section>
+
   <section class="search" aria-labelledby="sh">
     <h2 id="sh">查一檔股票</h2>
     <p class="intro">輸入代號或名稱，看它在三種方法裡各過了幾關。</p>
@@ -499,6 +505,24 @@ window.__STATUS__ = /*__STATUS__*/null;
       return `<div class="small" style="display:flex;justify-content:space-between;gap:8px"><span><b class="num">${k} 分</b>　${a.length} 檔，上漲 ${up} 檔</span><span class="num ${cls(avg)}" style="font-weight:800">平均 ${pct(avg)}</span></div>`;
     }).join('') + `</div>`;
   }
+  // 漏網之魚：同期全市場漲最多的股票，有沒有被選到、沒選到是卡在哪
+  const M = D.missed && D.missed.days && D.missed.days.length ? D.missed : null;
+  function paintMissed(d){
+    if (!M) return;
+    const day = M.days.find((x) => x.d === d);
+    if (!day) { $('mBody').innerHTML = `<div class="list"><p class="empty">${md(d)} 這天沒有分析資料。</p></div>`; return; }
+    const got = day.items.filter((x) => x.picked).length;
+    $('mBody').innerHTML = `<p class="small" style="margin-bottom:8px"><b>${md(d)} 之後全市場漲最多的 ${day.items.length} 檔</b>（到 ${md(M.asOf)} 收盤，全市場平均 ${pct(day.allAvg)}），推薦清單抓到 <b>${got}</b> 檔。</p>
+      <div class="list">${day.items.map((x) => `<div class="srow">
+        <span class="name"><span class="num">${x.c}</span>${esc(x.n)}</span>
+        <span class="path" style="white-space:normal">${x.picked ? '<span class="sig buy">有選到</span>' : `<span class="sig no">沒選到</span>卡在：${esc(x.why.join('、'))}`}${x.sc != null ? `（${x.sc} 分）` : ''}</span>
+        <span class="ret ${cls(x.r)}">${pct(x.r)}</span></div>`).join('')}</div>`;
+  }
+  if (M) {
+    $('miss').hidden = false;
+    const b = M.blockers.slice(0, 3).map(([k, v]) => `「${esc(k)}」${v} 次`).join('、');
+    $('mIntro').innerHTML = `用來檢查選股條件有沒有漏掉好股票。最近 ${M.days.length} 個推薦日，每天漲幅前 ${M.top} 名合計 ${M.winners} 檔次，推薦抓到 <b>${M.caught}</b> 檔次。沒抓到的，最常卡在：${b || '—'}。日期跟著上面的成績單切換。`;
+  }
   function scoreDays(){
     $('scDays').innerHTML = R.days.map((d, i) => {
       const st = dayStats(d);
@@ -509,10 +533,10 @@ window.__STATUS__ = /*__STATUS__*/null;
     const all = R.days.map(dayStats).filter((s) => s.n);
     const N = all.reduce((a, s) => a + s.n, 0), U = all.reduce((a, s) => a + s.up, 0);
     $('scIntro').innerHTML = `每天的「今日推薦」都會留下紀錄，這裡看它們推薦之後到現在漲跌多少。最近 ${R.days.length} 個交易日共推薦 ${N} 檔次，目前 <b>${N ? Math.round(U / N * 100) : 0}% 是上漲的</b>。點日期看每一天的明細。`;
-    scoreDays(); paintScore();
+    scoreDays(); paintScore(); if (M) paintMissed(R.days[scIdx].d);
     $('scDays').addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
-      scIdx = +b.dataset.i; scoreDays(); paintScore(); refreshLive();
+      scIdx = +b.dataset.i; scoreDays(); paintScore(); if (M) paintMissed(R.days[scIdx].d); refreshLive();
     });
   } else {
     $('scIntro').textContent = '推薦紀錄累積中，下一個交易日就會出現第一筆成績。';
