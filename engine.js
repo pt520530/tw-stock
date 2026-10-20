@@ -15,7 +15,7 @@ const CFG = {
 const LENS = {
   pick: { name: '推薦', checks: [] },
   swing: { name: '波段', checks: ['均線多頭排列', '月線往上', '價漲量增', '沒有追太高'] },
-  chips: { name: '籌碼', checks: ['投信連買 3 天', '投信 3 日買超 ≥ 100 張', '外資 5 日買超', '三大法人 5 日買超'] },
+  chips: { name: '籌碼', checks: ['法人連買 3 天', '法人買超佔量 5%', '外資 5 日買超', '三大法人 5 日買超'] },
 };
 
 // ---------- 小工具 ----------
@@ -320,19 +320,25 @@ function evaluate(store, i, val) {
     if (chipsReady) {
       const t = (k) => D[i - k].t[code] || 0;
       const sum = (key, days) => { let x = 0; for (let k = 0; k < days; k++) x += D[i - k][key][code] || 0; return x; };
-      const t3 = t(0) + t(1) + t(2), f5 = sum('f', 5), a5 = sum('a', 5);
-      let streak = 0; for (let k = 0; k <= Math.min(i, CFG.KEEP_CHIP_DAYS) && D[i - k] && D[i - k].t; k++) { if ((D[i - k].t[code] || 0) > 0) streak++; else break; }
+      const t3 = t(0) + t(1) + t(2), f5 = sum('f', 5), a5 = sum('a', 5), a3 = sum('a', 3);
+      let v3 = 0; for (let k = 0; k < 3; k++) v3 += D[i - k].v[code] || 0;
+      // 2026/10 檢討：只看投信會漏掉外資或主力帶動的強勢中小型股，改成「投信或外資」都算；
+      // 買超門檻改用「佔成交量的比例」，大型股、小型股才公平
+      let streak = 0; for (let k = 0; k <= Math.min(i, CFG.KEEP_CHIP_DAYS) && D[i - k] && D[i - k].t; k++) { if ((D[i - k].t[code] || 0) > 0 || ((D[i - k].f || {})[code] || 0) > 0) streak++; else break; }
+      const a3r = v3 ? a3 / v3 : 0;
       s.chips = {
-        ok: [streak >= 3, t3 >= 100000, f5 > 0, a5 > 0],
+        ok: [streak >= 3, a3r >= 0.05, f5 > 0, a5 > 0],
         t: [
-          streak ? `投信已連買 ${streak} 天` : '投信今天沒有買超',
-          `投信近 3 日合計 ${t3 >= 0 ? '買超' : '賣超'} ${lots(Math.abs(t3))} 張`,
+          streak ? `投信或外資已連買 ${streak} 天` : '投信、外資今天都沒有買超',
+          `三大法人近 3 日${a3 >= 0 ? '買超' : '賣超'} ${lots(Math.abs(a3))} 張，佔成交量 ${(a3r * 100).toFixed(1)}%`,
           `外資近 5 日合計 ${f5 >= 0 ? '買超' : '賣超'} ${lots(Math.abs(f5))} 張`,
           `三大法人近 5 日合計 ${a5 >= 0 ? '買超' : '賣超'} ${lots(Math.abs(a5))} 張`,
         ],
-        k: t3 / av20,
+        k: a3r,
       };
     }
+    // 相對強度：近 20 日漲幅（分數一樣時，比大盤強的排前面，操盤手最常用的排序）
+    const c20 = D[i - 20] && D[i - 20].c[code]; if (c20) s.rs = close / c20 - 1;
     // 推薦分數：波段 4 項＋籌碼 4 項，每項 12.5 分
     if (s.swing && s.chips) {
       const okAll = s.swing.ok.concat(s.chips.ok);
@@ -344,7 +350,7 @@ function evaluate(store, i, val) {
   const lists = {};
   lists.pick = Object.keys(stocks)
     .filter((c) => { const p = stocks[c].pick; return p && p.score >= 75 && p.trend && p.profit !== false; })
-    .sort((a, b) => stocks[b].pick.score - stocks[a].pick.score || stocks[b].swing.k - stocks[a].swing.k)
+    .sort((a, b) => stocks[b].pick.score - stocks[a].pick.score || (stocks[b].rs || 0) - (stocks[a].rs || 0))
     .slice(0, CFG.TOP_N);
   for (const lens of ['swing', 'chips']) {
     lists[lens] = Object.keys(stocks)
@@ -468,7 +474,8 @@ function missed(store, days = 5, top = 10) {
   for (const p of picks) {
     const i = idx[p.d], d0 = D[i];
     let ev; try { ev = evaluate(store, i, null); } catch (e) { continue; }
-    const shown = new Set(p.pick.slice(0, 15));
+    const newPick = (ev.lists.pick || []).slice(0, 15);
+    const shown = new Set(newPick);
     const rows = [];
     for (const code of Object.keys(ev.stocks)) {
       const p0 = d0.c[code], p1 = last.c[code];
@@ -490,7 +497,9 @@ function missed(store, days = 5, top = 10) {
       winners++; if (picked) caught++; else why.forEach((w) => (blockers[w] = (blockers[w] || 0) + 1));
       return { c: code, n: (store.names || {})[code] || code, m: (store.mkt || {})[code] === 'O' ? '櫃' : '市', r, sc: st.pick ? st.pick.score : null, picked, why };
     });
-    out.push({ d: p.d, held: D.length - 1 - i, allAvg, items });
+    const rOf = (c) => (d0.c[c] && last.c[c] ? last.c[c] / d0.c[c] - 1 : null);
+    const avgOf = (arr) => { const v = arr.map(rOf).filter((x) => x != null); return v.length ? v.reduce((a, x) => a + x, 0) / v.length : null; };
+    out.push({ d: p.d, held: D.length - 1 - i, allAvg, items, ruleAvg: avgOf(newPick), oldAvg: avgOf(p.pick.slice(0, 15)), ruleN: newPick.length });
   }
   const top3 = Object.entries(blockers).sort((a, b) => b[1] - a[1]);
   return { asOf: last.d, top, winners, caught, blockers: top3, days: out.reverse() };

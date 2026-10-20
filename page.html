@@ -228,8 +228,8 @@ window.__STATUS__ = /*__STATUS__*/null;
       intro:'<b>怎麼看：</b>每一列最前面的色塊就是訊號——<b style="color:var(--up)">買進區</b>＝價格合適可以分批買、<b style="color:var(--warn)">等拉回</b>＝漲多了先等、<b style="color:var(--down)">先別買</b>＝趨勢轉弱。點開任一檔，會寫出具體的買點價格和三條賣出規則（停損、停利、出場）。分數是 8 個條件過幾項，75 分以上才會列出。'},
     swing:{name:'波段', checks:['均線多頭排列','月線往上','價漲量增','沒有追太高'],
       intro:'<b>適合抱幾週到幾個月的人。</b>趨勢向上、今天有資金進場、但股價還沒離月線太遠。常見停損做法是跌破月線就出場。'},
-    chips:{name:'籌碼', checks:['投信連買 3 天','投信 3 日買超 ≥ 100 張','外資 5 日買超','三大法人 5 日買超'],
-      intro:'<b>跟著法人的腳步。</b>投信連續買進，外資和三大法人整體也站在買方。依投信買超佔成交量的比例排序。'},
+    chips:{name:'籌碼', checks:['法人連買 3 天','法人買超佔量 5%','外資 5 日買超','三大法人 5 日買超'],
+      intro:'<b>跟著法人的腳步。</b>投信或外資連續買進、法人買超佔成交量夠大，外資和三大法人整體也站在買方。依法人買超佔成交量的比例排序。'},
   };
 
   if (!D) {
@@ -294,7 +294,7 @@ window.__STATUS__ = /*__STATUS__*/null;
   function headline(code, k){
     const s = S[code];
     if (k === 'swing') return s.swing.t[2];
-    if (k === 'chips') return s.chips.t[0] + '・' + s.chips.t[1].replace('投信近 3 日合計 ','3 日');
+    if (k === 'chips') return s.chips.t[0] + '・' + s.chips.t[1].replace('三大法人近 3 日','3 日');
     const ok = s.swing.ok.concat(s.chips.ok), L = LENS.swing.checks.concat(LENS.chips.checks);
     const miss = L.filter((_, i) => !ok[i]);
     const pl = plan(code);
@@ -403,7 +403,8 @@ window.__STATUS__ = /*__STATUS__*/null;
   function panel(){
     const codes = listOf(current);
     const ready = (D.ready||{})[current];
-    let html = `<p class="intro">${LENS[current].intro}</p><div class="mkt" id="mkt">` +
+    const risk = { sunny: '', cloudy: '<p class="sample" style="background:#FFF4E0;color:var(--warn)">⛅ 大盤陰天：買進時只用平常一半的資金，停損要更嚴格。</p>', rain: '<p class="sample" style="background:#E6F6EE;color:var(--down)">🌧️ 大盤雨天：多數股票在跌，新手建議這幾天先不買，只觀察。已經買的照停損規則走。</p>' }[D.weather.level] || '';
+    let html = (current === 'pick' ? risk : '') + `<p class="intro">${LENS[current].intro}</p><div class="mkt" id="mkt">` +
       [['all','全部'],['市','上市'],['櫃','上櫃']].map(([k,l]) => `<button aria-pressed="${mk===k}" data-m="${k}">${l}</button>`).join('') + `</div>`;
     if (!ready) html += `<div class="list"><p class="empty">${current==='chips'?'三大法人資料需要累積 5 個交易日，之後會自動出現。':'資料準備中。'}</p></div>`;
     else if (!codes.length) html += `<div class="list"><p class="empty">今天沒有股票通過全部條件。條件刻意設得嚴格，寧缺勿濫。</p></div>`;
@@ -512,7 +513,8 @@ window.__STATUS__ = /*__STATUS__*/null;
     const day = M.days.find((x) => x.d === d);
     if (!day) { $('mBody').innerHTML = `<div class="list"><p class="empty">${md(d)} 這天沒有分析資料。</p></div>`; return; }
     const got = day.items.filter((x) => x.picked).length;
-    $('mBody').innerHTML = `<p class="small" style="margin-bottom:8px"><b>${md(d)} 之後全市場漲最多的 ${day.items.length} 檔</b>（到 ${md(M.asOf)} 收盤，全市場平均 ${pct(day.allAvg)}），推薦清單抓到 <b>${got}</b> 檔。</p>
+    $('mBody').innerHTML = `<p class="small" style="margin-bottom:8px"><b>${md(d)} 之後全市場漲最多的 ${day.items.length} 檔</b>（到 ${md(M.asOf)} 收盤），用目前的選股規則重算，會抓到 <b>${got}</b> 檔。</p>
+      <div class="sgrid" style="margin-bottom:10px"><div><span>全市場平均</span><b class="num ${cls(day.allAvg)}">${pct(day.allAvg)}</b><small>大家的表現</small></div><div><span>當天實際推薦</span><b class="num ${cls(day.oldAvg)}">${pct(day.oldAvg)}</b><small>當時規則</small></div><div><span>新規則重算</span><b class="num ${cls(day.ruleAvg)}">${pct(day.ruleAvg)}</b><small>${day.ruleN || 0} 檔</small></div></div>
       <div class="list">${day.items.map((x) => `<div class="srow">
         <span class="name"><span class="num">${x.c}</span>${esc(x.n)}</span>
         <span class="path" style="white-space:normal">${x.picked ? '<span class="sig buy">有選到</span>' : `<span class="sig no">沒選到</span>卡在：${esc(x.why.join('、'))}`}${x.sc != null ? `（${x.sc} 分）` : ''}</span>
